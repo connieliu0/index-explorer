@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Source Explorer</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="input-row">
+  <input id="url-input" type="text" placeholder="https://en.wikipedia.org/wiki/..." value="https://en.wikipedia.org/wiki/Six_degrees_of_separation" />
+  <button id="fetch-btn" type="button">Go</button>
+  <button id="open-map-btn" type="button" disabled>Map</button>
+</div>
+<div id="status"></div>
+<div id="workspace">
+  <div id="columns-scroll"></div>
+</div>
+<div id="legend">
+  <span><span class="dot" style="background:#5878C8"></span> Root</span>
+  <span><span class="dot" style="background:#3aaa7a"></span> Expanded</span>
+  <span><span class="dot" style="background:#E8A020"></span> Cross-cited</span>
+  <span><span class="dot" style="background:#C44B8A"></span> End link</span>
+  <span>3 links per column max; siblings stack in the next column</span>
+</div>
+
+<div id="map-overlay" aria-hidden="true">
+  <button type="button" class="map-overlay-backdrop" id="map-backdrop" aria-label="Close map"></button>
+  <div class="map-overlay-panel" role="dialog" aria-labelledby="map-title">
+    <div id="map-toolbar">
+      <h2 id="map-title">Map</h2>
+      <button type="button" id="map-fit-btn">Fit</button>
+      <button type="button" id="map-zoom-in">+</button>
+      <button type="button" id="map-zoom-out">−</button>
+      <button type="button" id="map-close-btn">Close</button>
+    </div>
+    <div id="map-canvas-wrap">
+      <canvas id="mini-map"></canvas>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
