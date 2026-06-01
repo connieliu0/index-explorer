@@ -8,15 +8,24 @@ let exploredList;
 let exploredActive = false;
 /** @type {string | null} */
 let selectedNodeId = null;
+/** @type {string | null} */
+let hoveredNodeId = null;
 
 export function isExploredViewActive() {
   return exploredActive;
 }
 
+export function isNodeInExploredPath(nodeId) {
+  if (!browseRoot || !nodeId) return false;
+  const pathNodes = collectExploredPath(browseRoot);
+  return pathNodes.some(node => node.id === nodeId);
+}
+
 function setWorkspaceMode() {
   if (!columnsScroll || !exploredPanel) return;
-  columnsScroll.hidden = exploredActive;
-  exploredPanel.hidden = !exploredActive;
+  columnsScroll.hidden = false;
+  exploredPanel.hidden = true;
+  columnsScroll.classList.toggle('explored-mode', exploredActive);
 }
 
 function deepestNodeId(branch) {
@@ -39,6 +48,9 @@ function renderExploredList() {
   const pathNodes = collectExploredPath(browseRoot);
   if (!selectedNodeId || !pathNodes.some(n => n.id === selectedNodeId)) {
     selectedNodeId = deepestNodeId(browseRoot);
+  }
+  if (hoveredNodeId && !pathNodes.some(n => n.id === hoveredNodeId)) {
+    hoveredNodeId = null;
   }
 
   for (const node of pathNodes) {
@@ -71,10 +83,21 @@ function renderExploredList() {
 
     const row = document.createElement('div');
     row.className = 'explored-row';
+    row.addEventListener('mouseenter', () => {
+      if (hoveredNodeId === node.id) return;
+      hoveredNodeId = node.id;
+      renderExploredList();
+    });
+    row.addEventListener('mouseleave', (e) => {
+      if (li.contains(e.relatedTarget)) return;
+      if (hoveredNodeId !== node.id) return;
+      hoveredNodeId = null;
+      renderExploredList();
+    });
     row.append(btn, link);
     li.appendChild(row);
 
-    if (node.id === selectedNodeId) {
+    if (node.id === hoveredNodeId) {
       const previewSlot = document.createElement('div');
       previewSlot.className = 'explored-item-preview';
       li.appendChild(previewSlot);
@@ -86,9 +109,7 @@ function renderExploredList() {
 }
 
 export function renderExploredIfActive() {
-  if (!exploredActive) return;
-  hideLinkPreview();
-  renderExploredList();
+  if (exploredActive) hideLinkPreview();
 }
 
 export function setExploredButtonEnabled(enabled) {
@@ -103,6 +124,7 @@ function updateToggleButton() {
 
 function setExploredActive(active) {
   exploredActive = active;
+  hoveredNodeId = null;
   updateToggleButton();
   setWorkspaceMode();
   if (exploredActive) {
@@ -117,6 +139,7 @@ export function toggleExploredView() {
 
 export function resetExploredView() {
   selectedNodeId = null;
+  hoveredNodeId = null;
   if (exploredActive) setExploredActive(false);
 }
 

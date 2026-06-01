@@ -2,7 +2,7 @@ import { setStatus } from './status.js';
 import { fetchPage, resolveLinkTitles } from './fetch.js';
 import { attachLinkPreview, hideLinkPreview } from './preview.js';
 import { drawIfOpen } from './map.js';
-import { renderExploredIfActive } from './explored.js';
+import { renderExploredIfActive, isNodeInExploredPath } from './explored.js';
 import {
   MAX_PICKS,
   nodes,
@@ -162,6 +162,8 @@ function buildPanel(branch) {
         if (pickedIds.has(child.id)) btn.classList.add('active');
         if (child.isEndLink) btn.classList.add('end-link');
         if (child.crossCited) btn.classList.add('cross-cited');
+        if (isNodeInExploredPath(child.id)) btn.classList.add('in-explored-path');
+        else btn.classList.add('outside-explored-path');
         const titleSpan = document.createElement('span');
         titleSpan.textContent = displayOutboundLinkLabel(child);
         btn.appendChild(titleSpan);
@@ -231,9 +233,18 @@ async function expandNode(node) {
     node.title = title || node.linkName || node.label;
     node.desc = desc;
     node.source = source;
-    node.expanded = true;
     node.loading = false;
     const children = placeChildren(node, links);
+    if (!children.length) {
+      node.expanded = false;
+      node.isEndLink = true;
+      markCrossCitations();
+      setStatus('0 links');
+      renderColumns();
+      drawIfOpen();
+      return false;
+    }
+    node.expanded = true;
     for (const c of children) { nodes.push(c); edges.push({ from: node.id, to: c.id }); }
     markCrossCitations();
     setStatus(`${children.length} links`);

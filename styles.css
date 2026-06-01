@@ -197,6 +197,16 @@ button, input, select, textarea { font: inherit; }
 }
 .column-list li button.end-link { cursor: alias; }
 .column-list li button.end-link:hover { background: #faf0f5; }
+.explored-mode .column-list li button.outside-explored-path {
+  color: #fff;
+}
+.explored-mode .column-list li button.in-explored-path,
+.explored-mode .column-list li button.active {
+  color: #111;
+}
+.explored-mode .column-list li button.active {
+  background: #fff3b0;
+}
 .link-status { opacity: 0.65; }
 .column-empty { padding: 0.5rem; }
 
@@ -244,6 +254,7 @@ button, input, select, textarea { font: inherit; }
   color: #444;
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
