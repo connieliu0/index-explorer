@@ -2,6 +2,7 @@ import { setStatus } from './status.js';
 
 const LOCAL_FETCH_PROXY = location.protocol === 'file:' ? 'http://localhost:3000' : '';
 const linkTitleCache = new Map();
+const previewCache = new Map();
 
 export function getWikiInfo(url) {
   try {
@@ -47,10 +48,14 @@ async function fetchWikipedia(url) {
   return { title: pageTitle, desc, links, source: 'wikipedia' };
 }
 
-async function fetchViaProxy(url) {
+async function fetchViaProxy(url, signal) {
+  const timeout = AbortSignal.timeout(30000);
+  const combined = signal
+    ? AbortSignal.any([signal, timeout])
+    : timeout;
   const res = await fetch(
     `${LOCAL_FETCH_PROXY}/fetch?url=${encodeURIComponent(url)}`,
-    { signal: AbortSignal.timeout(30000) },
+    { signal: combined },
   );
   const body = await res.text();
   if (!res.ok) {
@@ -166,12 +171,88 @@ const CONTENT_EXCLUDE_ANCESTORS =
   '[class*="comment-thread"],[class*="post-comments"],[data-component-name*="Comment"],' +
   '.subscribe-widget,.post-ufi,.footer-wrap,.post-footer,.site-footer';
 
+function parseMetaDoc(html) {
+  return new DOMParser().parseFromString(html, 'text/html');
+}
+
 function parsePageTitle(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const doc = parseMetaDoc(html);
   const getM = s => (doc.querySelector(s)?.getAttribute('content') || '').trim();
   let title = getM('meta[property="og:title"]') || getM('meta[name="twitter:title"]') || '';
   if (!title) title = (doc.querySelector('title')?.textContent || '').trim();
   return title.replace(/\s*[-–]\s*by\s+.+$/i, '').slice(0, 80).trim();
+}
+
+function parsePreviewMeta(html, pageUrl) {
+  const doc = parseMetaDoc(html);
+  const getM = s => (doc.querySelector(s)?.getAttribute('content') || '').trim();
+  let title = getM('meta[property="og:title"]') || getM('meta[name="twitter:title"]') || '';
+  if (!title) title = (doc.querySelector('title')?.textContent || '').trim();
+  title = title.replace(/\s*[-–]\s*by\s+.+$/i, '').slice(0, 120).trim();
+  const desc = (
+    getM('meta[property="og:description"]') ||
+    getM('meta[name="description"]') ||
+    getM('meta[name="twitter:description"]')
+  ).slice(0, 200).trim();
+  let image =
+    getM('meta[property="og:image"]') ||
+    getM('meta[property="og:image:url"]') ||
+    getM('meta[name="twitter:image"]') ||
+    getM('meta[name="twitter:image:src"]');
+  if (image) {
+    try { image = new URL(image, pageUrl).href; } catch { image = ''; }
+  } else {
+    image = '';
+  }
+  return { title, desc, image };
+}
+
+async function fetchWikipediaPreview(url, signal) {
+  const wiki = getWikiInfo(url);
+  if (!wiki) return null;
+  const { lang, title } = wiki;
+  const params = new URLSearchParams({
+    action: 'query',
+    format: 'json',
+    origin: '*',
+    titles: title,
+    prop: 'extracts|pageimages',
+    exintro: '1',
+    explaintext: '1',
+    exsentences: '2',
+    piprop: 'thumbnail',
+    pithumbsize: '320',
+  });
+  const res = await fetch(`https://${lang}.wikipedia.org/w/api.php?${params}`, { signal });
+  if (!res.ok) throw new Error(`Wikipedia API ${res.status}`);
+  const data = await res.json();
+  const page = Object.values(data.query?.pages || {})[0];
+  if (!page || page.missing !== undefined) throw new Error('No page found');
+  return {
+    title: page.title || title,
+    desc: (page.extract || '').replace(/\n/g, ' ').slice(0, 200).trim(),
+    image: page.thumbnail?.source || '',
+  };
+}
+
+/** @returns {Promise<{ title: string, desc: string, image: string }>} */
+export async function fetchLinkPreview(url, signal) {
+  if (previewCache.has(url)) return previewCache.get(url);
+  let result;
+  if (getWikiInfo(url)) {
+    result = await fetchWikipediaPreview(url, signal);
+    if (!result) throw new Error('Preview unavailable');
+  } else {
+    const html = await fetchViaProxy(url, signal);
+    result = parsePreviewMeta(html, url);
+  }
+  const preview = {
+    title: result.title || '',
+    desc: result.desc || '',
+    image: result.image || '',
+  };
+  previewCache.set(url, preview);
+  return preview;
 }
 
 async function fetchLinkTitle(url) {

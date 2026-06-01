@@ -10,11 +10,17 @@
 <div id="input-row">
   <input id="url-input" type="text" placeholder="https://en.wikipedia.org/wiki/..." value="https://en.wikipedia.org/wiki/Six_degrees_of_separation" />
   <button id="fetch-btn" type="button">Go</button>
-  <button id="open-map-btn" type="button" disabled>Map</button>
+  <div id="toolbar-actions">
+    <button id="explored-toggle-btn" type="button" disabled aria-pressed="false" title="Show explored path and previews">Explored</button>
+    <button id="open-map-btn" type="button" disabled>Map</button>
+  </div>
 </div>
 <div id="status"></div>
 <div id="workspace">
   <div id="columns-scroll"></div>
+  <div id="explored-panel" hidden aria-live="polite">
+    <ol id="explored-list" class="explored-list"></ol>
+  </div>
 </div>
 <div id="legend">
   <span><span class="dot" style="background:#5878C8"></span> Root</span>
@@ -29,6 +35,7 @@
   <div class="map-overlay-panel" role="dialog" aria-labelledby="map-title">
     <div id="map-toolbar">
       <h2 id="map-title">Map</h2>
+      <button type="button" id="map-mode-btn" title="Toggle path vs all links">All links</button>
       <button type="button" id="map-fit-btn">Fit</button>
       <button type="button" id="map-zoom-in">+</button>
       <button type="button" id="map-zoom-out">−</button>

@@ -29,6 +29,13 @@ export function branchesAtPickDepth(branch, targetDepth, depth = 0) {
   return branch.picks.flatMap(p => branchesAtPickDepth(p, targetDepth, depth + 1));
 }
 
+/** Nodes on the explored pick path (root first, depth-first through picks). */
+export function collectExploredPath(branch, out = []) {
+  out.push(branch.node);
+  for (const pick of branch.picks) collectExploredPath(pick, out);
+  return out;
+}
+
 export function childrenOf(parentId) {
   const seen = new Set(), out = [];
   for (const e of edges) {

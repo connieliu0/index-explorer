@@ -1,6 +1,8 @@
 import { setStatus } from './status.js';
 import { fetchPage, resolveLinkTitles } from './fetch.js';
+import { attachLinkPreview, hideLinkPreview } from './preview.js';
 import { drawIfOpen } from './map.js';
+import { renderExploredIfActive } from './explored.js';
 import {
   MAX_PICKS,
   nodes,
@@ -20,9 +22,86 @@ import {
 } from './state.js';
 
 let columnsScroll;
+let pickConnectorsSvg;
+let connectorRedrawScheduled = false;
 
 export function initColumns(el) {
   columnsScroll = el;
+  pickConnectorsSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  pickConnectorsSvg.setAttribute('class', 'pick-connectors');
+  pickConnectorsSvg.setAttribute('aria-hidden', 'true');
+  columnsScroll.addEventListener('scroll', scheduleConnectorRedraw, { passive: true, capture: true });
+  window.addEventListener('resize', scheduleConnectorRedraw);
+}
+
+function clearColumnChildren() {
+  for (const child of [...columnsScroll.children]) {
+    if (child !== pickConnectorsSvg) child.remove();
+  }
+}
+
+function scheduleConnectorRedraw() {
+  if (connectorRedrawScheduled) return;
+  connectorRedrawScheduled = true;
+  requestAnimationFrame(() => {
+    connectorRedrawScheduled = false;
+    drawPickConnectors();
+  });
+}
+
+function panelForNode(nodeId) {
+  return columnsScroll.querySelector(`[data-panel-node-id="${CSS.escape(nodeId)}"]`);
+}
+
+function pickButtonInPanel(parentNodeId, childNodeId) {
+  const panel = panelForNode(parentNodeId);
+  if (!panel) return null;
+  return panel.querySelector(`button.active[data-node-id="${CSS.escape(childNodeId)}"]`);
+}
+
+function collectPickSegments(branch, fromBtn) {
+  const segments = [];
+  for (const pick of branch.picks) {
+    const btn = pickButtonInPanel(branch.node.id, pick.node.id);
+    if (!btn) continue;
+    if (fromBtn) segments.push({ from: fromBtn, to: btn });
+    segments.push(...collectPickSegments(pick, btn));
+  }
+  return segments;
+}
+
+function anchorStart(el) {
+  const scrollR = columnsScroll.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  return {
+    x: r.left - scrollR.left + columnsScroll.scrollLeft,
+    y: r.top + r.height / 2 - scrollR.top + columnsScroll.scrollTop,
+  };
+}
+
+function connectorPathD(from, to) {
+  return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+}
+
+function drawPickConnectors() {
+  if (!pickConnectorsSvg || !browseRoot) return;
+  const w = columnsScroll.scrollWidth;
+  const h = columnsScroll.scrollHeight;
+  pickConnectorsSvg.setAttribute('width', String(w));
+  pickConnectorsSvg.setAttribute('height', String(h));
+  pickConnectorsSvg.style.width = `${w}px`;
+  pickConnectorsSvg.style.height = `${h}px`;
+  pickConnectorsSvg.replaceChildren();
+
+  const segments = collectPickSegments(browseRoot, null);
+  for (const { from, to } of segments) {
+    const p1 = anchorStart(from);
+    const p2 = anchorStart(to);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', connectorPathD(p1, p2));
+    path.setAttribute('class', 'pick-connector');
+    pickConnectorsSvg.appendChild(path);
+  }
 }
 
 function buildPanel(branch) {
@@ -31,6 +110,7 @@ function buildPanel(branch) {
 
   const panel = document.createElement('div');
   panel.className = 'stack-panel';
+  panel.dataset.panelNodeId = node.id;
 
   const header = document.createElement('div');
   header.className = 'column-header';
@@ -43,22 +123,18 @@ function buildPanel(branch) {
     a.rel = 'noopener';
     a.textContent = title;
     a.addEventListener('click', e => e.stopPropagation());
+    attachLinkPreview(a, node);
     return a;
   }
 
+  const h2 = document.createElement('h2');
+  h2.appendChild(articleLink());
+  header.appendChild(h2);
   if (node.desc) {
-    const details = document.createElement('details');
-    const summary = document.createElement('summary');
-    summary.appendChild(articleLink());
     const p = document.createElement('p');
     p.className = 'desc-body';
     p.textContent = node.desc;
-    details.append(summary, p);
-    header.appendChild(details);
-  } else {
-    const h2 = document.createElement('h2');
-    h2.appendChild(articleLink());
-    header.appendChild(h2);
+    header.appendChild(p);
   }
 
   const list = document.createElement('ul');
@@ -71,7 +147,10 @@ function buildPanel(branch) {
   } else if (!node.expanded) {
     list.innerHTML = '<li class="column-empty">—</li>';
   } else {
-    const kids = childrenOf(node.id);
+    const kids = childrenOf(node.id).filter(child => {
+      if (!child.crossCited) return true;
+      return child.parentId === node.id;
+    });
     if (!kids.length) {
       list.innerHTML = '<li class="column-empty">No links</li>';
     } else {
@@ -79,8 +158,10 @@ function buildPanel(branch) {
         const li = document.createElement('li');
         const btn = document.createElement('button');
         btn.type = 'button';
+        btn.dataset.nodeId = child.id;
         if (pickedIds.has(child.id)) btn.classList.add('active');
         if (child.isEndLink) btn.classList.add('end-link');
+        if (child.crossCited) btn.classList.add('cross-cited');
         const titleSpan = document.createElement('span');
         titleSpan.textContent = displayOutboundLinkLabel(child);
         btn.appendChild(titleSpan);
@@ -92,6 +173,7 @@ function buildPanel(branch) {
           btn.appendChild(statusSpan);
         }
         btn.addEventListener('click', () => onColumnItemClick(branch, child));
+        attachLinkPreview(btn, child);
         li.appendChild(btn);
         list.appendChild(li);
       }
@@ -103,9 +185,15 @@ function buildPanel(branch) {
 }
 
 export function renderColumns() {
-  columnsScroll.innerHTML = '';
+  hideLinkPreview();
+  clearColumnChildren();
   if (!browseRoot) {
-    columnsScroll.innerHTML = '<div class="column-empty">URL + Go</div>';
+    const empty = document.createElement('div');
+    empty.className = 'column-empty';
+    empty.textContent = 'URL + Go';
+    columnsScroll.appendChild(empty);
+    pickConnectorsSvg.replaceChildren();
+    columnsScroll.appendChild(pickConnectorsSvg);
     return;
   }
   const col1 = document.createElement('aside');
@@ -124,7 +212,11 @@ export function renderColumns() {
     col.appendChild(stack);
     columnsScroll.appendChild(col);
   }
-  columnsScroll.lastElementChild?.scrollIntoView({ inline: 'nearest', behavior: 'smooth' });
+  columnsScroll.appendChild(pickConnectorsSvg);
+  columnsScroll.querySelector('.column:last-of-type')?.scrollIntoView({ inline: 'nearest', behavior: 'smooth' });
+  scheduleConnectorRedraw();
+  setTimeout(scheduleConnectorRedraw, 400);
+  renderExploredIfActive();
 }
 
 async function expandNode(node) {
